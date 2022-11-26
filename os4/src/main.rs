@@ -11,6 +11,9 @@ extern crate log;
 extern crate alloc;
 
 #[macro_use]
+extern crate bitflags;
+
+#[macro_use]
 mod console;
 mod config;
 mod lang_items;
