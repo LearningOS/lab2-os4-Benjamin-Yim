@@ -20,6 +20,7 @@ impl TaskContext {
     }
     pub fn goto_trap_return(kstack_ptr: usize) -> Self {
         Self {
+            // 在构造方式上，只是将 ra 寄存器的值设置为 trap_return 的地址。
             ra: trap_return as usize,
             sp: kstack_ptr,
             s: [0; 12],

@@ -4,8 +4,18 @@ use super::PageTableEntry;
 use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
 use core::fmt::{self, Debug, Formatter};
 
+/// S/U 特权级的访存被视为一个 39 位的虚拟地址，MMU 会将其转换成 56 位的物理地址
+/// 0-11~12位为虚拟内存地址~4KB，业内偏移地址
+/// 12-39~27位 虚拟页号，
+/// 
+/// SV39 分页模式规定 64 位虚拟地址的。
+/// 这 25 位必须和第 38 位相同，否则 MMU 会直接认定它是一个不合法的虚拟地址。
+/// 
+/// 虚拟页号转物理页号转换前后偏移地址不变
+
 /**
  * 物理地址
+ * 物理页号向左移 12 位就可以获得物理地址
  */
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct PhysAddr(pub usize);
@@ -18,6 +28,7 @@ pub struct VirtAddr(pub usize);
 
 /**
  * 物理页号
+ * 物理页号向左移 12 位就可以获得物理地址
  */
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct PhysPageNum(pub usize);
@@ -165,7 +176,7 @@ impl VirtPageNum {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
         for i in (0..3).rev() {
-            idx[i] = vpn & 511;
+            idx[i] = vpn & 0x11111111;
             vpn >>= 9;
         }
         idx

@@ -1,6 +1,6 @@
-/**
- * get_num_app 获取链接到内核内的应用的数目
- */
+//! Loading user applications into memory
+
+/// Get the total number of applications.
 pub fn get_num_app() -> usize {
     extern "C" {
         fn _num_app();
@@ -8,9 +8,7 @@ pub fn get_num_app() -> usize {
     unsafe { (_num_app as usize as *const usize).read_volatile() }
 }
 
-/**
- * get_app_data 则根据传入的应用编号 取出对应应用的 ELF 格式可执行文件数据
- */
+/// get applications data
 pub fn get_app_data(app_id: usize) -> &'static [u8] {
     extern "C" {
         fn _num_app();

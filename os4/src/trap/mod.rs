@@ -52,7 +52,6 @@ pub fn enable_timer_interrupt() {
 #[no_mangle]
 pub fn trap_handler() -> ! {
     set_kernel_trap_entry();
-    // 获取当前应用的 Trap 上下文的可变引用
     let cx = current_trap_cx();
     let scause = scause::read();
     let stval = stval::read();
@@ -86,9 +85,11 @@ pub fn trap_handler() -> ! {
     trap_return();
 }
 
+/**
+ * 返回用户态
+ */
 #[no_mangle]
 pub fn trap_return() -> ! {
-    // 让应用 Trap 到 S 的时候可以跳转到 __alltraps
     set_user_trap_entry();
     let trap_cx_ptr = TRAP_CONTEXT;
     let user_satp = current_user_token();

@@ -51,7 +51,8 @@ impl Drop for FrameTracker {
     }
 }
 
-/// 描述物理帧管理器需要提供哪些功能
+/// BASE_ADDRESS 和 MEMORY_END 传给 FrameAllocator ，
+/// 用于物理页帧管理器用于初始化
 trait FrameAllocator {
     fn new() -> Self;
     fn alloc(&mut self) -> Option<PhysPageNum>;
@@ -60,11 +61,10 @@ trait FrameAllocator {
 
 /// an implementation for frame allocator
 /**
- * 实现一种最简单的栈式物理页帧管理策略 StackFrameAllocator
- * 物理页号区间  此前均 从未 被分配出去过，
+ * 实现一种最简单的栈式物理页帧管理器
  * 而向量 recycled 以后入先出的方式保存了被回收的物理页号
  * current: 可分配的物理地址的起始位置
- * end: 可分配物理地址的最终位置
+ * end: 可分配物理地址的最终位置，current-end 表示这里的地址从来没有使用过
  * recycled: 已经分配过回收的内存地址，可重复使用的地址
  */
 pub struct StackFrameAllocator {
@@ -74,6 +74,9 @@ pub struct StackFrameAllocator {
 }
 
 impl StackFrameAllocator {
+    /**
+     * 初始化，修改 current 和 end 为真实可用的物理空间
+     */
     pub fn init(&mut self, l: PhysPageNum, r: PhysPageNum) {
         self.current = l.0;
         self.end = r.0;
@@ -90,6 +93,7 @@ impl FrameAllocator for StackFrameAllocator {
 
     /**
      * 物理页帧的分配
+     * 分配一个，向前新增一个所以永远不会重复
      */
     fn alloc(&mut self) -> Option<PhysPageNum> {
         // 如果从回收的物理内存中可以获取到可再利用的地址
@@ -113,8 +117,9 @@ impl FrameAllocator for StackFrameAllocator {
         let ppn = ppn.0;
         // validity check
         // 回收条件
-        // 1. 该页面之前一定被分配出去过，因此它的物理页号一定  ；
+        // 1. 该页面之前一定被分配出去过，因此它的物理页号一定 < current  ；
         // 2. 该页面没有正处在回收状态，即它的物理页号不能在栈 recycled 中找到。
+        // any 是为了在回收过的地址中找到一个与其相同的值，如果找到了就表示出现了内核错误
         if ppn >= self.current || self.recycled.iter().any(|v| *v == ppn) {
             panic!("Frame ppn={:#x} has not been allocated!", ppn);
         }

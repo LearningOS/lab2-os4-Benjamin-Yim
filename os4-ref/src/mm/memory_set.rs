@@ -85,6 +85,9 @@ impl MemorySet {
         self.areas.push(map_area);
     }
     /// Mention that trampoline is not collected by areas.
+    /// 在执行 __alltraps 或 __restore 函数进行地址空间切换的时候， 
+    /// 应用的用户态虚拟地址空间和操作系统内核的内核态虚拟地址空间对
+    /// 切换地址空间的指令所在页的映射方式均是相同的
     fn map_trampoline(&mut self) {
         self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
@@ -213,7 +216,7 @@ impl MemorySet {
         // guard page
         user_stack_bottom += PAGE_SIZE;
         let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
-        // 应用地址空间中映射次高页面来存放 Trap 上下文。
+        // Guard Page
         memory_set.push(
             MapArea::new(
                 user_stack_bottom.into(),
@@ -223,7 +226,7 @@ impl MemorySet {
             ),
             None,
         );
-        // map TrapContext
+        // 应用地址空间中映射次高页面来存放 Trap 上下文。
         memory_set.push(
             MapArea::new(
                 TRAP_CONTEXT.into(),
@@ -243,9 +246,19 @@ impl MemorySet {
     }
 
     pub fn activate(&self) {
+        // 构造一个无符号 64 位无符号整数
         let satp = self.page_table.token();
         unsafe {
+            // 切换 satp 的指令及其下一条指令这两条相邻的指令的 
+            // 虚拟地址是相邻的（由于切换 satp 的指令并不是一条跳转指令， 
+            // pc 只是简单的自增当前指令的字长）， 而它们所在的物理地址
+            // 一般情况下也是相邻的，但是它们所经过的地址转换流程却是不
+            // 同的——切换 satp 导致 MMU 查的多级页表 是不同的。
+            // 这就要求前后两个地址空间在切换 satp 的指令 附近 的映射满足某种意义上的连续性。
             satp::write(satp);
+            // 修改了 satp 切换了地址空间，快表中的键值对就会失效，因为它还表示着上个地址空间的映射关系。
+            // 为了 MMU 的地址转换 能够及时与 satp 的修改同步，我们可以选择
+            // 立即使用 sfence.vma 指令将快表清空，这样 MMU 就不会看到快表中已经 过期的键值对了。
             core::arch::asm!("sfence.vma");
         }
     }
@@ -264,9 +277,16 @@ impl MemorySet {
  */
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
+    // 虚拟地址可用的连续区间
     vpn_range: VPNRange,
+    // 逻辑段采用 MapType::Framed 方式映射到物理内存的时候， 
+    // data_frames 是一个保存了该逻辑段内的每个虚拟页面 和它
+    // 被映射到的物理页帧 FrameTracker 的一个键值对容器 BTreeMap 中，
+    // 这些物理页帧被用来存放实际内存数据而不是 作为多级页表中的中间节点
     data_frames: BTreeMap<VirtPageNum, FrameTracker>,
     map_type: MapType,
+    // MapPermission 表示控制该逻辑段的访问方式，它是页表项标志位
+    // PTEFlags 的一个子集，仅保留 U/R/W/X 四个标志位
     map_perm: MapPermission,
 }
 
@@ -290,6 +310,12 @@ impl MapArea {
             map_perm,
         }
     }
+    /**
+     * 单个虚拟页面进行映射逻辑段被映射到物理内存的方式
+     * 在虚拟页号 vpn 已经确定的情况下，它需要知道要将一个怎么样的页表项插入多级页表。
+     * 页表项的标志位来源于当前逻辑段的类型为 MapPermission 的统一配置，
+     * 只需将其转换为 PTEFlags ；而页表项的 物理页号则取决于当前逻辑段映射到物理内存的方式
+     */
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {
@@ -297,12 +323,14 @@ impl MapArea {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
+                // 如果不是恒等映射就获取一个物理帧，并进行映射
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
             }
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        // 调用多级页表 PageTable 的 map 接口来插入键值对
         page_table.map(vpn, ppn, pte_flags);
     }
     #[allow(unused)]
@@ -384,8 +412,6 @@ impl MapArea {
  * 的一个键值对容器 BTreeMap 中，这些物理页帧被用来存放实际内存数据而不是
  * 作为多级页表中的中间节点
  *
- * MapPermission 表示控制该逻辑段的访问方式，它是页表项标志位
- * PTEFlags 的一个子集，仅保留 U/R/W/X 四个标志位
  */
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed

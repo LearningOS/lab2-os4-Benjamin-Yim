@@ -85,6 +85,9 @@ pub fn trap_handler() -> ! {
     trap_return();
 }
 
+/**
+ * 返回用户态
+ */
 #[no_mangle]
 pub fn trap_return() -> ! {
     set_user_trap_entry();

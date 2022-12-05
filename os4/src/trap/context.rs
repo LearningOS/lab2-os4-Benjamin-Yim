@@ -8,11 +8,11 @@ pub struct TrapContext {
     pub x: [usize; 32],
     pub sstatus: Sstatus,
     pub sepc: usize,
-    // 表示内核地址空间的 token 
+    // 内核地址空间的 token 
     pub kernel_satp: usize,
-    // 表示当前应用在内核地址空间中的内核栈栈顶的虚拟地址
+    // 表示当前应用在内核地址空间中的内核栈栈顶的虚拟地址；
     pub kernel_sp: usize,
-    // 表示内核中 trap handler 入口点的虚拟地址
+    // 表示内核中 trap handler 入口点的虚拟地址。
     pub trap_handler: usize,
 }
 

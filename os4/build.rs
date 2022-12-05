@@ -1,3 +1,5 @@
+//! Building applications linker
+
 use std::fs::{read_dir, File};
 use std::io::{Result, Write};
 
@@ -9,6 +11,7 @@ fn main() {
 
 static TARGET_PATH: &str = "../user/build/elf/";
 
+/// get app data and build linker
 fn insert_app_data() -> Result<()> {
     let mut f = File::create("src/link_app.S").unwrap();
     let mut apps: Vec<_> = read_dir("../user/build/elf/")
@@ -36,7 +39,9 @@ _num_app:
     for i in 0..apps.len() {
         writeln!(f, r#"    .quad app_{}_start"#, i)?;
     }
-    writeln!(f, r#"    .quad app_{}_end"#, apps.len() - 1)?;
+    if !apps.is_empty() {
+        writeln!(f, r#"    .quad app_{}_end"#, apps.len() - 1)?;
+    }
 
     for (idx, app) in apps.iter().enumerate() {
         println!("app_{}: {}", idx, app);

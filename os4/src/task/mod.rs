@@ -63,7 +63,6 @@ lazy_static! {
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
-                    // 从第 0 个应用开始执行
                     current_task: 0,
                 })
             },

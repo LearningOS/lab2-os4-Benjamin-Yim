@@ -23,7 +23,10 @@ use page_table::{PTEFlags, PageTable};
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
+    // 全局动态内存分配器的初始化
     heap_allocator::init_heap();
+    // 初始化物理页帧 管理器使能可用物理页帧的分配和回收能力。
     frame_allocator::init_frame_allocator();
+    // 创建内核地址空间并让 CPU 开启分页模式
     KERNEL_SPACE.lock().activate();
 }

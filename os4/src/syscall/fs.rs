@@ -9,7 +9,6 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     match fd {
         FD_STDOUT => {
             let buffers = translated_byte_buffer(current_user_token(), buf, len);
-            // 将每个字节数组切片转化为字符串 &str 然后输出即可
             for buffer in buffers {
                 print!("{}", core::str::from_utf8(buffer).unwrap());
             }

@@ -1,12 +1,19 @@
+//! Constants used in rCore
+
 pub const USER_STACK_SIZE: usize = 4096 * 2;
 pub const KERNEL_STACK_SIZE: usize = 4096 * 20;
 pub const KERNEL_HEAP_SIZE: usize = 0x30_0000;
-// 内核可用最大物理内存地址。内核起始物理地址：0x80000000。
-pub const MEMORY_END: usize = 0x88000000;
+// 内核使用的物理地址的开始位置
+#[allow(unused)]
+pub const KERNEL_START_END: usize = 0x80000000;
+// 内核使用物理地址上限位置,意味着我们将可用内存大小设置为 8MB
+pub const MEMORY_END: usize = 0x80800000;
+// 每个页的页面大小 4096 
 pub const PAGE_SIZE: usize = 0x1000;
+// 页面内偏移位宽 12
 pub const PAGE_SIZE_BITS: usize = 0xc;
 pub const MAX_SYSCALL_NUM: usize = 500;
-// 最高地址
+
 pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const TRAP_CONTEXT: usize = TRAMPOLINE - PAGE_SIZE;
 /// Return (bottom, top) of a kernel stack in kernel space.
