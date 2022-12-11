@@ -7,7 +7,7 @@ pub const KERNEL_HEAP_SIZE: usize = 0x30_0000;
 #[allow(unused)]
 pub const KERNEL_START_END: usize = 0x80000000;
 // 内核使用物理地址上限位置,意味着我们将可用内存大小设置为 8MB
-pub const MEMORY_END: usize = 0x80800000;
+pub const MEMORY_END: usize = 0x81000000;
 // 每个页的页面大小 4096 
 pub const PAGE_SIZE: usize = 0x1000;
 // 页面内偏移位宽 12

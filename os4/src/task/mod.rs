@@ -14,8 +14,16 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use core::borrow::{Borrow, BorrowMut};
+
+use crate::config::{MAX_SYSCALL_NUM, PAGE_SIZE};
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::memory_set::{MapType, MapArea};
+use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
+use crate::syscall;
+use crate::syscall::process::TaskInfo;
+use crate::timer::get_time_us;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -79,6 +87,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.time = get_time_us();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -127,6 +136,123 @@ impl TaskManager {
         inner.tasks[inner.current_task].get_trap_cx()
     }
 
+    #[allow(clippy::mut_from_ref)]
+    /// Get the current 'Running' task's trap contexts.
+    fn sys_mmap(&self,start: usize, len: usize, permission: MapPermission) -> bool{
+        let mut inner = self.inner.exclusive_access();
+        let current_task = inner.current_task;
+        let start_vpn = VirtAddr::from(start).floor();
+        let end_vpn = VirtAddr::from(start+len).ceil();
+        let areas: &Vec<MapArea> =  inner.tasks[current_task].memory_set.areas.borrow();
+        for ele in  areas{
+            // 判断是否在范围内
+        //    if start_vpn <= ele.vpn_range.get_start()  && ele.vpn_range.get_end() <= end_vpn {
+        //         return false;
+        //    }
+           let start = ele.vpn_range.get_start();
+            let end = ele.vpn_range.get_end();
+            if start_vpn < end && end_vpn > start {
+                return false;
+            }
+        }
+        // {
+        //     let mut start = start_vpn.0;
+        //     while start < end_vpn.0{
+        //         if inner.tasks[current_task].memory_set.range(start, start+1){
+        //             return false;
+        //         }
+        //         start+=1usize;
+        //     }
+        // }
+        // let mut start_va = start;
+        // let end_vpn = start + len;
+        // while start_va < end_vpn {
+        //     inner.tasks[current_task].memory_set.insert_framed_area(VirtAddr::from(start_va) ,VirtAddr::from(start_va+PAGE_SIZE),permission);
+        //     start_va += PAGE_SIZE;
+        // }
+        // println!("insert_framed_area start:{} end:{}",VirtAddr::from(start).floor().0 ,VirtAddr::from(start+len).ceil().0);
+        inner.tasks[current_task].memory_set.insert_framed_area(start_vpn.into() ,end_vpn.into(),permission);
+        // 拆分每页
+        // let mut start = start_vpn.0;
+        // while start < end_vpn.0{
+        //     inner.tasks[current_task].memory_set.insert_framed_area(VirtPageNum::from(start).into() ,VirtPageNum::from(start+1).into() ,permission);
+        //     start+=1usize;
+        // }
+        true
+    }
+
+    #[allow(clippy::mut_from_ref)]
+    fn sys_munmap(&self,start: usize, len: usize) -> isize{
+
+        let mut inner = self.inner.exclusive_access();
+        let current_task = inner.current_task;
+
+        let memory_set = &mut inner.tasks[current_task].memory_set;
+        memory_set.remove(start, len)
+
+
+        // let start_vpn = VirtAddr(start).floor();
+        // let end_vpn = VirtAddr(start+len).ceil();
+
+        // let mut start_index = start_vpn.0;
+
+        // let mut exsit = 0;
+        // for _ in 0..max{
+        //     for item in 0..inner.tasks[current_task].memory_set.areas.len(){
+        //         let memory_set = &mut inner.tasks[current_task].memory_set;
+        //         println!("range start:{} end:{},the start:{} end:{},len:{}",memory_set.areas[item].vpn_range.get_start().0,memory_set.areas[item].vpn_range.get_end().0, start_vpn.0,end_vpn.0,len);
+        //         if VirtPageNum::from(start_index) == memory_set.areas[item].vpn_range.get_start()  && memory_set.areas[item].vpn_range.get_end() == VirtPageNum::from(start_index+1) {
+        //             exsit += 1;
+        //         }
+        //     }
+        //     start_index+=1;
+        // }
+        
+        // if exsit == 0{
+        //     println!("no exist so return false=>the start:{} end:{},len:{}",start_vpn.0,end_vpn.0,len);
+        //     return false;
+        // }
+        // println!(" exist so return true=>the start:{} end:{},len:{},exsit:{}",start_vpn.0,end_vpn.0,len,exsit);
+
+        // start_index = start_vpn.0;
+        // for _ in 0..max{
+        //     for item in 0..inner.tasks[current_task].memory_set.areas.len(){
+        //         let memory_set = &mut inner.tasks[current_task].memory_set;
+        //         if item >= memory_set.areas.len(){
+        //                 continue;
+        //         }
+        //         if VirtPageNum::from(start_index) == memory_set.areas[item].vpn_range.get_start()  && memory_set.areas[item].vpn_range.get_end() == VirtPageNum::from(start_index+1) {
+        //             println!("removing start:{} end:{}",memory_set.areas[item].vpn_range.get_start().0,memory_set.areas[item].vpn_range.get_end().0);
+        //             memory_set.areas[item].unmap(&mut memory_set.page_table);
+        //             memory_set.areas.remove(item);
+        //         }
+        //     }
+        //     start_index+=1;
+        // }
+        // for item in 0..inner.tasks[current_task].memory_set.areas.len(){
+        //     let memory_set = &mut inner.tasks[current_task].memory_set;
+        //     println!("remove after range start:{} end:{}",memory_set.areas[item].vpn_range.get_start().0,memory_set.areas[item].vpn_range.get_end().0);
+        // }
+        // true
+    }
+
+
+    #[allow(clippy::mut_from_ref)]
+    /// Get the current 'Running' task's trap contexts.
+    fn get_current_task_info(&self) -> syscall::process::TaskInfo {
+        let inner = self.inner.exclusive_access();
+         syscall::process::TaskInfo{
+            status: inner.tasks[inner.current_task].task_status.clone(),
+            syscall_times:inner.tasks[inner.current_task].syscall_times.clone(),
+            time: inner.tasks[inner.current_task].time,
+         }
+    }
+
+    fn inc_current_task_syscall(&self,syscall_id: usize){
+        let mut inner = self.inner.exclusive_access();
+        let current_task = inner.current_task;
+        inner.tasks[current_task].syscall_times[syscall_id]+=1;
+    }
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -135,6 +261,9 @@ impl TaskManager {
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
+            if inner.tasks[next].time == 0 {
+                inner.tasks[next].time = get_time_us();
+            }
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
@@ -190,4 +319,26 @@ pub fn current_user_token() -> usize {
 /// Get the current 'Running' task's trap contexts.
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+
+
+/// Get the current 'Running' task's trap contexts.
+pub fn get_current_task_info() -> TaskInfo {
+    TASK_MANAGER.get_current_task_info()
+}
+
+/// Get the current 'Running' task's trap contexts.
+pub fn inc_current_task_syscall(syscall_id: usize) {
+    TASK_MANAGER.inc_current_task_syscall(syscall_id)
+}
+
+/// Get the current 'Running' task's trap contexts.
+pub fn kernel_sys_mmap(start: usize, len: usize, port: MapPermission) -> bool {
+    TASK_MANAGER.sys_mmap(start,len,port)
+}
+
+
+pub fn kernel_sys_munmap(_start: usize, _len: usize) -> isize{
+    // 不小心把 _len 写错 _start 排查 3 小时
+    TASK_MANAGER.sys_munmap(_start,_len)
 }

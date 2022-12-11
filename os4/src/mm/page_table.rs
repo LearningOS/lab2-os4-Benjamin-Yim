@@ -171,20 +171,28 @@ impl PageTable {
      * 页表项标志位 flags 作为 不同的参数传入而不是整合为一个页表项
      */
     #[allow(unused)]
-    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) -> bool{
         let pte = self.find_pte_create(vpn).unwrap();
-        assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+        // assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+        if pte.is_valid() {
+            return false;
+        }
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        true
     }
 
     /**
      * 通过 unmap 方法来删除一个键值对，在调用时仅需给出作为索引的虚拟页号即可。
      */
     #[allow(unused)]
-    pub fn unmap(&mut self, vpn: VirtPageNum) {
+    pub fn unmap(&mut self, vpn: VirtPageNum) -> bool {
         let pte = self.find_pte_create(vpn).unwrap();
-        assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
+        // assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
+        if !pte.is_valid() {
+            return false;
+        }
         *pte = PageTableEntry::empty();
+        true
     }
 
     // 如果能够找到页表项，那么它会将页表项拷贝一份并返回，否则就 返回一个 None 。

@@ -7,10 +7,10 @@ use core::fmt::{self, Debug, Formatter};
 /// S/U 特权级的访存被视为一个 39 位的虚拟地址，MMU 会将其转换成 56 位的物理地址
 /// 0-11~12位为虚拟内存地址~4KB，业内偏移地址
 /// 12-39~27位 虚拟页号，
-/// 
+///
 /// SV39 分页模式规定 64 位虚拟地址的。
 /// 这 25 位必须和第 38 位相同，否则 MMU 会直接认定它是一个不合法的虚拟地址。
-/// 
+///
 /// 虚拟页号转物理页号转换前后偏移地址不变
 
 /**
@@ -141,7 +141,7 @@ impl PhysAddr {
     }
     /**
      * 向上取整
-     */    
+     */
     pub fn ceil(&self) -> PhysPageNum {
         PhysPageNum((self.0 - 1 + PAGE_SIZE) / PAGE_SIZE)
     }
@@ -176,7 +176,7 @@ impl VirtPageNum {
         let mut vpn = self.0;
         let mut idx = [0usize; 3];
         for i in (0..3).rev() {
-            idx[i] = vpn & 0x11111111;
+            idx[i] = vpn & 511;
             vpn >>= 9;
         }
         idx
@@ -186,7 +186,7 @@ impl VirtPageNum {
 // 每一个对应于某一特定物理页帧的物理页号 ppn ，均存在一个虚拟页号 vpn 能够映射到它
 // 要能够较为简单的针对一个 ppn 找到某一个能映射到它的 vpn
 // 这里我们采用一种最 简单的 恒等映射 (Identical Mapping) ，
-// 也就是说对于物理内存上的每个物理页帧，我们都在多级页表中用一个与其 
+// 也就是说对于物理内存上的每个物理页帧，我们都在多级页表中用一个与其
 // 物理页号相等的虚拟页号映射到它。当我们想针对物理页号构造一个能映射到它的虚拟页号的时候，
 // 也只需使用一个和该物理页号 相等的虚拟页号即可。
 // 参考[from_raw_parts_mut]https://rust.longyb.com/ch19-01-unsafe-rust.html
@@ -195,18 +195,18 @@ impl VirtPageNum {
 impl PhysPageNum {
     // 返回值类型上附加了 静态生命周期泛型 'static ，这是为了绕过 Rust 编译器的借用检查，
     // 实质上可以将返回的类型也看成一个裸指针，因为 它也只是标识数据存放的位置以及类型。
-    // 但与裸指针不同的是，无需通过 unsafe 的解引用访问它指向的数据，而是可以像一个 
+    // 但与裸指针不同的是，无需通过 unsafe 的解引用访问它指向的数据，而是可以像一个
     // 正常的可变引用一样直接访问。
 
     //  返回的是一个页表项定长数组的可变引用，可以用来修改多级页表中的一个节点
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
         // 先把物理页号转为物理地址 PhysAddr ，然后再转成 usize 形式的物理地址
         let pa: PhysAddr = (*self).into();
-        unsafe { 
+        unsafe {
             // 我们直接将它 转为裸指针用来访问物理地址指向的物理内存
             // from_raw_parts_mut 函数通过指针和长度来创建一个新的切片，
             // 简单来说，该切片的初始地址是 data 指针 ，长度为 len
-            core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512) 
+            core::slice::from_raw_parts_mut(pa.0 as *mut PageTableEntry, 512)
         }
     }
     // 返回的是一个字节数组的可变引用，可以以字节为粒度
@@ -214,20 +214,25 @@ impl PhysPageNum {
     pub fn get_bytes_array(&self) -> &'static mut [u8] {
         // 先把物理页号转为物理地址 PhysAddr ，然后再转成 usize 形式的物理地址
         let pa: PhysAddr = (*self).into();
-        unsafe { 
+        unsafe {
             // 我们直接将它 转为裸指针用来访问物理地址指向的物理内存
             // from_raw_parts_mut 函数通过指针和长度来创建一个新的切片，
             // 简单来说，该切片的初始地址是 data 指针 ，长度为 len
-            core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096) 
+            core::slice::from_raw_parts_mut(pa.0 as *mut u8, 4096)
         }
     }
     // 可以获取一个恰好放在一个物理页帧开头的类型为 T 的数据的可变引用
     pub fn get_mut<T>(&self) -> &'static mut T {
         // 先把物理页号转为物理地址 PhysAddr ，然后再转成 usize 形式的物理地址
         let pa: PhysAddr = (*self).into();
-        unsafe { 
+        unsafe {
             // 我们直接将它 转为裸指针用来访问物理地址指向的物理内存
-            (pa.0 as *mut T).as_mut().unwrap() 
+            match (pa.0 as *mut T).as_mut() {
+                Some(x) => x,
+                None => {
+                    panic!("Found a None!")
+                },
+            }
         }
     }
 }

@@ -43,8 +43,8 @@ lazy_static! {
  * */
 /// memory set structure, controls virtual-memory space
 pub struct MemorySet {
-    page_table: PageTable,
-    areas: Vec<MapArea>,
+    pub page_table: PageTable,
+    pub areas: Vec<MapArea>,
 }
 
 impl MemorySet {
@@ -265,6 +265,37 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+
+    pub fn range(&self,start_vpn: usize, end_vpn: usize) -> bool{
+
+        for (index,item) in self.areas.iter().enumerate(){
+            let startv = item.vpn_range.get_start();
+            let endv = item.vpn_range.get_end();
+            if start_vpn ==  startv.0 && endv.0 == end_vpn {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn remove(&mut self,start: usize, len: usize) -> isize{
+        // 如果取整将会导致结果 +1 与 0x10000000 结果相同
+        let start_vpn = VirtAddr::from(start);
+        let end_vpn = VirtAddr::from(start+len);
+        for (index,item) in self.areas.iter_mut().enumerate(){
+            let startv:VirtAddr = item.vpn_range.get_start().into();
+            let endv:VirtAddr = item.vpn_range.get_end().into();
+            if start_vpn.0 ==  startv.0 && endv.0 == end_vpn.0 {
+                item.unmap(&mut self.page_table);
+                self.areas.remove(index);
+                if start == 0x10000001{
+                    println!("0x10000000+1")
+                }
+                return 0;
+            }
+        }
+        -1
+    }
 }
 
 
@@ -278,16 +309,16 @@ impl MemorySet {
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
     // 虚拟地址可用的连续区间
-    vpn_range: VPNRange,
+    pub vpn_range: VPNRange,
     // 逻辑段采用 MapType::Framed 方式映射到物理内存的时候， 
     // data_frames 是一个保存了该逻辑段内的每个虚拟页面 和它
     // 被映射到的物理页帧 FrameTracker 的一个键值对容器 BTreeMap 中，
     // 这些物理页帧被用来存放实际内存数据而不是 作为多级页表中的中间节点
-    data_frames: BTreeMap<VirtPageNum, FrameTracker>,
-    map_type: MapType,
+    pub data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+    pub map_type: MapType,
     // MapPermission 表示控制该逻辑段的访问方式，它是页表项标志位
     // PTEFlags 的一个子集，仅保留 U/R/W/X 四个标志位
-    map_perm: MapPermission,
+    pub map_perm: MapPermission,
 }
 
 impl MapArea {
@@ -316,14 +347,22 @@ impl MapArea {
      * 页表项的标志位来源于当前逻辑段的类型为 MapPermission 的统一配置，
      * 只需将其转换为 PTEFlags ；而页表项的 物理页号则取决于当前逻辑段映射到物理内存的方式
      */
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
-        let ppn: PhysPageNum;
+    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) -> bool{
+        let mut ppn: PhysPageNum = PhysPageNum(0);
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
                 // 如果不是恒等映射就获取一个物理帧，并进行映射
+                // let op_frame = frame_alloc();
+                // match op_frame {
+                //     Some(frame)=>{
+                //         ppn = frame.ppn;
+                //         self.data_frames.insert(vpn, frame);
+                //     },
+                //     _=>{},
+                // }
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
@@ -331,10 +370,11 @@ impl MapArea {
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         // 调用多级页表 PageTable 的 map 接口来插入键值对
-        page_table.map(vpn, ppn, pte_flags);
+        page_table.map(vpn, ppn, pte_flags)
     }
+
     #[allow(unused)]
-    pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) -> bool{
         #[allow(clippy::single_match)]
         match self.map_type {
             MapType::Framed => {
@@ -342,27 +382,33 @@ impl MapArea {
             }
             _ => {}
         }
-        page_table.unmap(vpn);
+        page_table.unmap(vpn)
     }
     /**
      * 可以将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的 多级页表中加入
      */
-    pub fn map(&mut self, page_table: &mut PageTable) {
+    pub fn map(&mut self, page_table: &mut PageTable) -> bool{
         for vpn in self.vpn_range {
             // 每个虚拟页面为单位依次在多级页表中进行 键值对的插入
-            self.map_one(page_table, vpn);
+            if !self.map_one(page_table, vpn){
+                return false;
+            }
         }
+        true
     }
 
     /**
      * 可以将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的 多级页表中删除
      */
     #[allow(unused)]
-    pub fn unmap(&mut self, page_table: &mut PageTable) {
+    pub fn unmap(&mut self, page_table: &mut PageTable) -> bool {
         for vpn in self.vpn_range {
             // 每个虚拟页面为单位依次在多级页表中进行 键值对的删除
-            self.unmap_one(page_table, vpn);
+            if !self.unmap_one(page_table, vpn){
+                return false;
+            }
         }
+        true
     }
 
     /**

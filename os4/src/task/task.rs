@@ -1,7 +1,8 @@
 //! Types related to task management
 use super::TaskContext;
-use crate::config::{kernel_stack_position, TRAP_CONTEXT};
+use crate::config::{kernel_stack_position, TRAP_CONTEXT, MAX_SYSCALL_NUM};
 use crate::mm::{MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::timer::{get_time, get_time_us};
 use crate::trap::{trap_handler, TrapContext};
 
 /// task control block structure
@@ -12,6 +13,9 @@ pub struct TaskControlBlock {
     // 位于应用地址空间次高页的 Trap 上下文被实际存放在物理页帧的物理页号 trap_cx_ppn
     pub trap_cx_ppn: PhysPageNum,
     pub base_size: usize,
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    pub time: usize,
+
 }
 
 impl TaskControlBlock {
@@ -51,8 +55,12 @@ impl TaskControlBlock {
             memory_set,
             trap_cx_ppn,
             base_size: user_sp,
+            syscall_times: [0; MAX_SYSCALL_NUM],
+            // 首次设置的时候是 get_time_us mark。
+            time: 0,
         };
         // prepare TrapContext in user space
+        // println!("prepare TrapContext in user space:{}",task_control_block.trap_cx_ppn.0);
         let trap_cx = task_control_block.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
             entry_point,
@@ -65,7 +73,7 @@ impl TaskControlBlock {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug,Copy, Clone, PartialEq)]
 /// task status: UnInit, Ready, Running, Exited
 pub enum TaskStatus {
     UnInit,
